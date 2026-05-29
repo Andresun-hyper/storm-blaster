@@ -1,0 +1,16 @@
+name = "ui-worker"
+description = "Builds Battle Arena UI, menus, match result panels, room screens, and spectator screens."
+model = "gpt-5.4-mini"
+model_reasoning_effort = "medium"
+
+developer_instructions = """
+You work on React UI only.
+
+Goals:
+- Add an AI Battle Arena entry point.
+- Let users start a local AI battle.
+- Show fighter names, bot types, live score/lives/kills, and final match report.
+- Add minimal multiplayer room UI when the backend protocol exists.
+- Keep the neon sci-fi visual style of the existing menu.
+- Avoid touching core engine logic unless absolutely necessary.
+"""

@@ -1,3 +1,41 @@
+# Storm Blaster AI Battle Arena
+
+Storm Blaster is a React + TypeScript + Vite vertical shooter. The current project direction adds AI-controlled battle modes where users configure, spectate, compare, and review AI fighters.
+
+## AI Battle Modes
+
+- `AI BATTLE`: local deterministic AI-vs-AI battle with Aggressive, Defensive, Collector, and offline LLM Strategy bots.
+- `ONLINE ROOM`: local WebSocket room flow for creating/joining rooms, selecting bots, readying up, watching server-authoritative snapshots, and receiving final reports.
+
+## Development
+
+```bash
+npm run dev
+npm run dev:server
+```
+
+Run both frontend and room server:
+
+```bash
+npm run dev:all
+```
+
+Verification:
+
+```bash
+npm run build
+npm run build:server
+npm run lint
+```
+
+Docs:
+
+- `AI_BATTLE_ARENA_TASKBOOK.md`: extracted taskbook and prompts.
+- `docs/multiplayer-rooms.md`: room server and WebSocket flow.
+- `docs/llm-strategy-layer.md`: offline strategy planner and future provider guidance.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
