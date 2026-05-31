@@ -2154,7 +2154,7 @@ function BattleRoomPanel({
   }, [ladderList, playerId]);
 
   return (
-    <div className="astra-fui absolute inset-0 flex flex-col z-10 text-[#4a5568] bg-[#eef2f7]">
+    <div className="absolute inset-0 flex flex-col z-10 text-[#4a5568] bg-[#eef2f7]">
       <MenuBackground />
       <div className="relative z-10 flex h-full flex-col px-4 py-4">
         <div className="flex items-center gap-3">
@@ -2223,7 +2223,7 @@ function BattleRoomPanel({
 
                 <button
                   onClick={startQuickPlay}
-                  className="w-full rounded-xl border border-cyan-300/40 bg-cyan-400/15 px-4 py-3 text-sm font-black text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.28)] transition-all active:scale-95"
+                  className="w-full neu-btn-primary rounded-xl px-4 py-3 text-sm font-black transition-all active:scale-95"
                 >
                   {tx(language, 'Novice Quick Play', '小白快速模式：一键配置并准备')}
                 </button>
@@ -2381,12 +2381,12 @@ function BattleRoomPanel({
 
           <div className="relative min-h-[360px] overflow-hidden rounded-3xl border-4 border-white/70 bg-[#e1e8f0] shadow-[inset_6px_6px_14px_rgba(163,177,198,0.65),_inset_-6px_-6px_14px_rgba(255,255,255,0.8)] bg-[radial-gradient(#d1d9e6_1px,transparent_1px)] [background-size:16px_16px]">
             {activeChallengeOpponent && snapshot && snapshot.phase !== 'finished' && (
-              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4 bg-slate-900/90 text-white border border-white/20 px-6 py-2.5 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.3)] animate-bounce font-black text-sm whitespace-nowrap">
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4 neu-card bg-[#eef2f7] text-[#4a5568] border border-white/60 px-6 py-2.5 rounded-2xl animate-bounce font-black text-sm whitespace-nowrap">
                 <span className="text-[#FF4D8D] truncate max-w-[90px]">{displayName}</span>
-                <span className="text-[9px] text-gray-400 bg-white/10 px-1.5 py-0.5 rounded">CP {personalCP}</span>
+                <span className="text-[9px] text-[#718096] bg-[#e1e8f0] px-1.5 py-0.5 rounded">CP {personalCP}</span>
                 <span className="text-yellow-400 italic font-black">VS</span>
-                <span className="text-cyan-400 truncate max-w-[90px]">{activeChallengeOpponent.displayName}</span>
-                <span className="text-[9px] text-gray-400 bg-white/10 px-1.5 py-0.5 rounded">CP {activeChallengeOpponent.combatPower}</span>
+                <span className="text-[#5e7fa8] truncate max-w-[90px]">{activeChallengeOpponent.displayName}</span>
+                <span className="text-[9px] text-[#718096] bg-[#e1e8f0] px-1.5 py-0.5 rounded">CP {activeChallengeOpponent.combatPower}</span>
               </div>
             )}
 
@@ -2408,17 +2408,17 @@ function BattleRoomPanel({
           </div>
 
           <div className="min-h-0 overflow-y-auto rounded-[24px] neu-card border border-white/60 bg-[#eef2f7] p-5 flex flex-col gap-4">
-            <div className="rounded-2xl border border-cyan-300/20 bg-slate-950/40 p-3.5 shadow-[inset_0_0_18px_rgba(34,211,238,0.08)]">
+            <div className="rounded-2xl neu-flat border border-white/40 bg-[#eef2f7] p-3.5">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#2d3748]">
                     {tx(language, 'Module Loadout', '模组装配')}
                   </p>
                   <p className="mt-1 text-[11px] font-bold text-[#718096]">
                     {tx(language, 'Pick levels. Cost equals level. Max 12 points.', '选择等级，等级即消耗，最多 12 点。')}
                   </p>
                 </div>
-                <div className={`rounded-xl px-3 py-2 text-right font-black ${loadoutOverLimit ? 'bg-red-500/15 text-red-400' : 'bg-cyan-400/10 text-cyan-300'}`}>
+                <div className={`rounded-xl px-3 py-2 text-right font-black shadow-inner ${loadoutOverLimit ? 'bg-red-500/10 text-red-500' : 'bg-[#e1e8f0] text-[#5e7fa8]'}`}>
                   <p className="text-[9px] uppercase tracking-wider">{tx(language, 'Points', '点数')}</p>
                   <p className="text-lg leading-none">{loadoutPoints}/{MODULE_POINT_LIMIT}</p>
                 </div>
@@ -2428,7 +2428,7 @@ function BattleRoomPanel({
                 <button
                   type="button"
                   onClick={applyRandomLoadout}
-                  className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-2 py-1.5 text-[10px] font-black text-cyan-200 active:scale-95"
+                  className="neu-btn rounded-lg px-2 py-1.5 text-[10px] font-black text-[#4a5568] active:scale-95"
                 >
                   {tx(language, 'Random', '随机')}
                 </button>
@@ -2437,7 +2437,7 @@ function BattleRoomPanel({
                     key={preset.key}
                     type="button"
                     onClick={() => applyModulePreset(preset.modules)}
-                    className="rounded-lg border border-white/15 bg-white/5 px-2 py-1.5 text-[10px] font-black text-[#4a5568] active:scale-95"
+                    className="neu-btn rounded-lg px-2 py-1.5 text-[10px] font-black text-[#4a5568] active:scale-95"
                   >
                     {tx(language, preset.en, preset.zh)}
                   </button>
@@ -2448,9 +2448,9 @@ function BattleRoomPanel({
                 {MODULE_CATALOG.map((module) => {
                   const currentLevel = selectedModules[module.name] ?? 0;
                   return (
-                    <div key={module.name} className="rounded-xl border border-white/10 bg-black/10 p-2.5">
+                    <div key={module.name} className="rounded-xl border border-white/30 bg-[#eef2f7] p-2.5 neu-flat">
                       <div className="flex items-start gap-2">
-                        <span className="mt-0.5 inline-flex h-7 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-300/25 bg-cyan-300/10 text-[10px] font-black text-cyan-200">
+                        <span className="mt-0.5 inline-flex h-7 w-8 shrink-0 items-center justify-center rounded-lg border border-white/50 bg-[#e1e8f0] text-[10px] font-black text-[#5e7fa8] shadow-inner">
                           {module.short}
                         </span>
                         <div className="min-w-0 flex-1">
@@ -2460,7 +2460,7 @@ function BattleRoomPanel({
                           <p className="mt-0.5 text-[10px] font-bold leading-relaxed text-[#718096]">
                             {tx(language, module.descEn, module.descZh)}
                           </p>
-                          <p className="mt-1 text-[9px] font-bold leading-relaxed text-cyan-500/90">
+                          <p className="mt-1 text-[9px] font-bold leading-relaxed text-[#5e7fa8]">
                             {tx(language, module.hintEn, module.hintZh)}
                           </p>
                         </div>
@@ -2476,8 +2476,8 @@ function BattleRoomPanel({
                             }}
                             className={`rounded-lg border px-2 py-1.5 text-[10px] font-black transition-all active:scale-95 ${
                               currentLevel === level
-                                ? 'border-cyan-300/60 bg-cyan-300/20 text-cyan-100 shadow-[0_0_10px_rgba(34,211,238,0.18)]'
-                                : 'border-white/10 bg-white/5 text-[#718096]'
+                                ? 'border-white/70 bg-[#dbe7f4] text-[#2d3748] shadow-inner'
+                                : 'border-white/40 bg-[#eef2f7] text-[#718096]'
                             }`}
                           >
                             {level === 0 ? tx(language, 'Off', '关闭') : `Lv${level}`}
@@ -2538,12 +2538,12 @@ function BattleRoomPanel({
                     {tx(language, 'Generate AI Prompt', '1. 生成战术提示词 (Prompt)')}
                   </button>
 
-                  <div className="rounded-xl border border-white/15 bg-black/10 p-2.5">
+                  <div className="rounded-xl border border-white/30 bg-[#eef2f7] p-2.5 neu-flat">
                     <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-[#718096]">
                       {tx(language, 'Briefing URL', 'Briefing 简报链接')}
                     </p>
                     <div className="grid grid-cols-[1fr_auto] gap-2">
-                      <code className="truncate rounded-lg bg-black/10 px-2 py-1.5 text-[10px] font-black text-cyan-300" title={briefingUrl}>
+                      <code className="truncate rounded-lg bg-[#e1e8f0] px-2 py-1.5 text-[10px] font-black text-[#5e7fa8] shadow-inner" title={briefingUrl}>
                         {briefingUrl}
                       </code>
                       <button
@@ -2552,7 +2552,7 @@ function BattleRoomPanel({
                           navigator.clipboard.writeText(briefingUrl);
                           setError(tx(language, 'Briefing URL copied.', 'Briefing 简报链接已复制。'));
                         }}
-                        className="rounded-lg border border-cyan-300/20 px-2 text-[10px] font-black text-cyan-200 active:scale-95"
+                        className="neu-btn rounded-lg px-2 text-[10px] font-black text-[#4a5568] active:scale-95"
                       >
                         {tx(language, 'Copy', '复制')}
                       </button>
@@ -2569,14 +2569,14 @@ function BattleRoomPanel({
                           setError(err instanceof Error ? err.message : String(err));
                         }
                       }}
-                      className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-[11px] font-black text-cyan-200 active:scale-95"
+                      className="neu-btn rounded-xl px-3 py-2 text-[11px] font-black text-[#4a5568] active:scale-95"
                     >
                       {tx(language, 'System Strategy', '系统策略')}
                     </button>
                     <button
                       type="button"
                       onClick={startQuickPlay}
-                      className="rounded-xl border border-pink-300/25 bg-pink-400/10 px-3 py-2 text-[11px] font-black text-pink-200 active:scale-95"
+                      className="neu-btn-primary rounded-xl px-3 py-2 text-[11px] font-black active:scale-95"
                     >
                       {tx(language, 'Quick Play', '小白快速')}
                     </button>
@@ -2747,12 +2747,12 @@ function BattleRoomPanel({
               )}
 
               {strategyImportSummary && (
-                <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-3 text-[10px] font-bold text-[#4a5568]">
+                <div className="rounded-xl border border-white/30 bg-[#eef2f7] p-3 text-[10px] font-bold text-[#4a5568] neu-inset">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-[#5e7fa8]">
                       {tx(language, 'Pre-Battle Gambit', '战前博弈自动动作')}
                     </p>
-                    <span className="rounded bg-cyan-300/10 px-1.5 py-0.5 text-[8px] font-black text-cyan-200">
+                    <span className="rounded bg-[#e1e8f0] px-1.5 py-0.5 text-[8px] font-black text-[#5e7fa8]">
                       {strategyImportSummary.title}
                     </span>
                   </div>
@@ -2797,7 +2797,7 @@ function BattleRoomPanel({
                       <span className="truncate font-black text-[#2d3748] flex items-center gap-1.5">
                         {participant.displayName}
                         {participant.playerId.startsWith('system-') && (
-                          <span className="rounded bg-cyan-300/10 px-1.5 py-0.5 text-[8px] font-black text-cyan-300">
+                          <span className="rounded bg-[#e1e8f0] px-1.5 py-0.5 text-[8px] font-black text-[#5e7fa8]">
                             {tx(language, 'SYS', '系统')}
                           </span>
                         )}
@@ -2815,7 +2815,7 @@ function BattleRoomPanel({
                     {participant.bot?.modules && participant.bot.modules.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {participant.bot.modules.map((module) => (
-                          <span key={module} className="rounded border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-black text-cyan-200">
+                          <span key={module} className="rounded border border-white/40 bg-[#e1e8f0] px-1.5 py-0.5 text-[9px] font-black text-[#5e7fa8]">
                             {module.replace('-Lv', ' Lv')}
                           </span>
                         ))}
