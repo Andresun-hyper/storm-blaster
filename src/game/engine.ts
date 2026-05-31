@@ -3,6 +3,8 @@ import { createPlayer, createEnemy, createPlayerBullet, createEnemyBullet, creat
 import { getLevelConfig } from './levels';
 import { audioManager } from './audio';
 
+const STANDARD_BOSS_SHOOT_COOLDOWN = 0.95;
+
 export class GameEngine {
   private canvas: HTMLCanvasElement;
   private state: GameState;
@@ -367,6 +369,7 @@ export class GameEngine {
       const hasBoss = this.state.enemies.some(e => e.enemyType === 'boss');
       if (!hasBoss) {
         const boss = createEnemy('boss', w, h, this.levelConfig.enemySpeedMultiplier);
+        this.tuneBossForCurrentLevel(boss);
         boss.pos.y = -boss.height;
         this.state.enemies.push(boss);
         return;
@@ -390,6 +393,12 @@ export class GameEngine {
     }
 
     this.state.enemies.push(enemy);
+  }
+
+  private tuneBossForCurrentLevel(boss: Enemy) {
+    if (this.gameMode !== 'level' || this.levelConfig.id >= 10) return;
+    boss.shootCooldown = STANDARD_BOSS_SHOOT_COOLDOWN;
+    boss.shootTimer = STANDARD_BOSS_SHOOT_COOLDOWN;
   }
 
   private updateEnemies(dt: number) {
