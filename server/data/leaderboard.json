@@ -18,7 +18,7 @@
     "score": 1650,
     "modules": [
       "Aegis Layer-Lv3",
-      "Repair Nanites-Lv3",
+      "Repair Wisp-Lv3",
       "Vector Drive-Lv3"
     ],
     "botKind": "defensive",
@@ -53,7 +53,7 @@
     "modules": [
       "Wing Swarm-Lv2",
       "Aegis Layer-Lv2",
-      "Repair Nanites-Lv2"
+      "Repair Wisp-Lv2"
     ],
     "botKind": "collector",
     "combatPower": 10550,

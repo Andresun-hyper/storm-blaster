@@ -5,7 +5,23 @@ import { Renderer } from '../game/renderer';
 import { LEVELS } from '../game/levels';
 import { audioManager } from '../game/audio';
 import { LocalBattleEngine, type BattleFighterConfig, type BattleReport, type BattleState } from '../game/battle';
-import { createBotController, listBotMetadata, type BotKind, parseImportUrl, type BotPolicy, normalizeBotPolicy, parseModulesFromUrl } from '../game/bots';
+import {
+  createBotController,
+  listBotMetadata,
+  type BotKind,
+  parseImportUrl,
+  type BotPolicy,
+  normalizeBotPolicy,
+  parseModulesFromUrl,
+  createStrategyImportSummary,
+  createStrategyImportUrl,
+  createSystemStrategyImport,
+  generateBriefingUrl,
+  generateBriefingPromptForImportUrl,
+  parseStrategyImportUrl,
+  validateStrategyImportUrl,
+  type SystemStrategyMode,
+} from '../game/bots';
 import type { ClientMessage, MatchReport, RoomInfo, ServerMessage, LadderEntry } from '../game/multiplayer/protocol';
 import { Star, Lock, Play, RotateCcw, Home as HomeIcon, Settings, ChevronLeft, Volume2, VolumeX, Trophy, Infinity as InfinityIcon, Swords, Bot, Crown, Users } from 'lucide-react';
 
@@ -58,7 +74,7 @@ function renderFighterModules(modules?: readonly string[]) {
         else if (lower.includes('blackout pulse')) { label = 'BP'; colorClass = 'bg-purple-600'; }
         else if (lower.includes('aegis layer')) { label = 'AL'; colorClass = 'bg-blue-600'; }
         else if (lower.includes('vector drive')) { label = 'VD'; colorClass = 'bg-teal-500'; }
-        else if (lower.includes('repair')) { label = 'RN'; colorClass = 'bg-green-500'; }
+        else if (lower.includes('repair')) { label = 'RW'; colorClass = 'bg-green-500'; }
         
         if (!label) return null;
         
@@ -86,11 +102,182 @@ const BATTLE_ROSTER: Array<{ id: string; name: string; kind: BotKind; color: str
   { id: 'oracle', name: 'Oracle-09', kind: 'llm-strategy', color: '#B28DFF' },
 ];
 
+const MODULE_POINT_LIMIT = 12;
+
+const MODULE_CATALOG = [
+  {
+    name: 'Wing Swarm',
+    zh: '僚机蜂群',
+    short: 'WS',
+    accent: 'cyan',
+    descZh: '召唤僚机侧翼协同射击，火力密度高。',
+    descEn: 'Adds wingmen that fire alongside the craft.',
+    hintZh: '怕黯灭脉冲，适合强攻开局。',
+    hintEn: 'Countered by Blackout Pulse; good for assault starts.',
+  },
+  {
+    name: 'Missile Storm',
+    zh: '导弹风暴',
+    short: 'MS',
+    accent: 'rose',
+    descZh: '增加扇形导弹弹幕，压低多个目标血线。',
+    descEn: 'Adds fan-shaped missile volleys for pressure.',
+    hintZh: '配合僚机蜂群可形成高压火网。',
+    hintEn: 'Pairs well with Wing Swarm for sustained pressure.',
+  },
+  {
+    name: 'Overload Lance',
+    zh: '超载长枪',
+    short: 'OL',
+    accent: 'amber',
+    descZh: '强化主炮单发伤害，适合点杀威胁目标。',
+    descEn: 'Boosts main-shot damage for focused kills.',
+    hintZh: '会被幻影回响误导，需搭配机动或验证。',
+    hintEn: 'Can be baited by Phantom Echo; verify targets first.',
+  },
+  {
+    name: 'Phantom Echo',
+    zh: '幻影回响',
+    short: 'PE',
+    accent: 'violet',
+    descZh: '制造诱饵残影，扰乱锁定和火力判断。',
+    descEn: 'Creates echoes that disrupt targeting.',
+    hintZh: '克制超载长枪，适合欺骗战术。',
+    hintEn: 'Counters Overload Lance; strong in deception plans.',
+  },
+  {
+    name: 'Ghost Veil',
+    zh: '幽灵面纱',
+    short: 'GV',
+    accent: 'indigo',
+    descZh: '周期性进入隐身，降低被集火概率。',
+    descEn: 'Periodically cloaks to reduce focus fire.',
+    hintZh: '配合幻影回响提高生存和误导。',
+    hintEn: 'Combines with Phantom Echo for survival and baiting.',
+  },
+  {
+    name: 'Blackout Pulse',
+    zh: '黯灭脉冲',
+    short: 'BP',
+    accent: 'fuchsia',
+    descZh: '释放短暂干扰脉冲，压制蜂群和高频火力。',
+    descEn: 'Emits disruption pulses against swarm fire.',
+    hintZh: '直接克制僚机蜂群，是控制流核心。',
+    hintEn: 'Directly counters Wing Swarm; core control module.',
+  },
+  {
+    name: 'Aegis Layer',
+    zh: '宙斯盾层',
+    short: 'AL',
+    accent: 'blue',
+    descZh: '提供额外护盾层，提高换血容错。',
+    descEn: 'Adds shield layers for safer trades.',
+    hintZh: '和修复妖精组成稳定防守套。',
+    hintEn: 'Pairs with Repair Wisp for durable defense.',
+  },
+  {
+    name: 'Repair Wisp',
+    zh: '修复妖精',
+    short: 'RW',
+    accent: 'emerald',
+    descZh: '周期修复耐久，拖长对局收益高。',
+    descEn: 'Repairs over time and rewards long fights.',
+    hintZh: '怕持续高压伤害，避免被导弹风暴压制。',
+    hintEn: 'Weak to sustained pressure such as Missile Storm.',
+  },
+  {
+    name: 'Vector Drive',
+    zh: '矢量引擎',
+    short: 'VD',
+    accent: 'teal',
+    descZh: '提高机动和闪避效率，适合游走拉扯。',
+    descEn: 'Improves mobility and dodge efficiency.',
+    hintZh: '适合搭配超载长枪做高速点杀。',
+    hintEn: 'Useful with Overload Lance for fast strike plans.',
+  },
+] as const;
+
+const MODULE_PRESETS: Array<{ key: 'aggressive' | 'defensive' | 'control' | 'deception' | 'mobility'; zh: string; en: string; modules: Record<string, number> }> = [
+  { key: 'aggressive', zh: '强攻', en: 'Assault', modules: { 'Wing Swarm': 3, 'Missile Storm': 3, 'Overload Lance': 3, 'Vector Drive': 3 } },
+  { key: 'defensive', zh: '防守', en: 'Defense', modules: { 'Aegis Layer': 3, 'Repair Wisp': 3, 'Vector Drive': 2, 'Ghost Veil': 2, 'Blackout Pulse': 2 } },
+  { key: 'control', zh: '控制', en: 'Control', modules: { 'Blackout Pulse': 3, 'Phantom Echo': 3, 'Ghost Veil': 2, 'Wing Swarm': 2, 'Aegis Layer': 2 } },
+  { key: 'deception', zh: '欺骗', en: 'Deception', modules: { 'Phantom Echo': 3, 'Ghost Veil': 3, 'Vector Drive': 2, 'Blackout Pulse': 2, 'Repair Wisp': 2 } },
+  { key: 'mobility', zh: '机动', en: 'Mobility', modules: { 'Vector Drive': 3, 'Overload Lance': 3, 'Ghost Veil': 2, 'Missile Storm': 2, 'Aegis Layer': 2 } },
+];
+
+function createEmptyModuleState(): Record<string, number> {
+  return Object.fromEntries(MODULE_CATALOG.map((module) => [module.name, 0]));
+}
+
+function normalizeModuleName(name: string): string {
+  if (/repair\s+nanites/i.test(name)) return 'Repair Wisp';
+  const match = MODULE_CATALOG.find((module) => module.name.toLowerCase() === name.trim().toLowerCase());
+  return match?.name ?? name.trim();
+}
+
+function createModuleStateFromList(modules: readonly string[]): Record<string, number> {
+  const state = createEmptyModuleState();
+  for (const entry of modules) {
+    const match = /^(.+?)(?:[-\s]+Lv\s*|\s+Lv\s*)([1-3])$/i.exec(entry.trim());
+    const name = normalizeModuleName(match?.[1] ?? entry);
+    const level = match ? Number(match[2]) : 1;
+    if (name in state) {
+      state[name] = Math.max(0, Math.min(3, level));
+    }
+  }
+  return state;
+}
+
+function createPresetModuleState(preset: Record<string, number>): Record<string, number> {
+  return { ...createEmptyModuleState(), ...preset };
+}
+
+function createRandomModuleState(seed = Date.now()): Record<string, number> {
+  const state = createEmptyModuleState();
+  let remaining = MODULE_POINT_LIMIT;
+  let random = seed >>> 0;
+  const next = () => {
+    random = Math.imul(random || 1, 1664525) + 1013904223;
+    return (random >>> 0) / 4294967296;
+  };
+
+  const pool = [...MODULE_CATALOG].sort(() => next() - 0.5);
+  for (const module of pool) {
+    if (remaining <= 0) break;
+    if (next() < 0.35 && remaining < 8) continue;
+    const level = Math.min(3, remaining, Math.max(1, Math.ceil(next() * 3)));
+    state[module.name] = level;
+    remaining -= level;
+  }
+
+  if (moduleLoadoutPoints(state) === 0) {
+    state['Wing Swarm'] = 2;
+    state['Missile Storm'] = 2;
+    state['Aegis Layer'] = 2;
+  }
+
+  return state;
+}
+
+function moduleLoadoutPoints(modules: Record<string, number>): number {
+  return Object.values(modules).reduce((sum, level) => sum + Math.max(0, level), 0);
+}
+
+function moduleStateToList(modules: Record<string, number>): string[] {
+  return Object.entries(modules)
+    .filter(([, level]) => level > 0)
+    .map(([name, level]) => `${normalizeModuleName(name)}-Lv${level}`);
+}
+
 const ROOM_SERVER_URL =
   (import.meta.env.VITE_BATTLE_SERVER_URL as string | undefined) ??
   (() => {
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    const host = typeof window !== 'undefined' ? window.location.host : '127.0.0.1:3001';
+    const host = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'localhost:3001'
+      : typeof window !== 'undefined'
+        ? window.location.host
+        : '127.0.0.1:3001';
     return `${isHttps ? 'wss' : 'ws'}://${host}/ws`;
   })();
 
@@ -101,7 +288,7 @@ function createBattleFighters(): BattleFighterConfig[] {
     if (fighter.id === 'viper') {
       modules = ['Wing Swarm Lv 3', 'Missile Storm Lv 2'];
     } else if (fighter.id === 'aegis') {
-      modules = ['Aegis Layer Lv 3', 'Repair Nanites Lv 2'];
+      modules = ['Aegis Layer Lv 3', 'Repair Wisp Lv 2'];
     } else if (fighter.id === 'midas') {
       modules = ['Phantom Echo Lv 3', 'Vector Drive Lv 2'];
     } else if (fighter.id === 'oracle') {
@@ -866,7 +1053,7 @@ export default function HomePage() {
               className="w-64 neu-btn-primary font-black text-xl py-4 px-8 rounded-2xl mb-3 flex items-center justify-center gap-3 transition-all active:scale-95"
             >
               <Swords size={24} fill="white" />
-              {tx(language, 'INTELLIGENCE ROOM', '情报对局舱')}
+              {tx(language, 'AI BATTLE ROOM', 'AI 多人对战')}
             </button>
 
             <button
@@ -1405,7 +1592,13 @@ function BattleRoomPanel({
 }) {
   const socketRef = useRef<WebSocket | null>(null);
   const playerIdRef = useRef('');
-  const [displayName, setDisplayName] = useState('Pilot');
+  const [displayName, setDisplayName] = useState(() => {
+    try {
+      return localStorage.getItem('astra_gambit_callsign') || 'Pilot';
+    } catch {
+      return 'Pilot';
+    }
+  });
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [selectedBot, setSelectedBot] = useState<BotKind>('aggressive');
   const [room, setRoom] = useState<RoomInfo | null>(null);
@@ -1431,30 +1624,74 @@ function BattleRoomPanel({
   const [agentUrl, setAgentUrl] = useState('http://127.0.0.1:8000/strategy');
   const [agentStatus, setAgentStatus] = useState<'idle' | 'linking' | 'success' | 'error'>('idle');
 
-  const [selectedModules, setSelectedModules] = useState<Record<string, number>>({
-    'Wing Swarm': 0,
-    'Missile Storm': 0,
-    'Overload Lance': 0,
-    'Phantom Echo': 0,
-    'Ghost Veil': 0,
-    'Blackout Pulse': 0,
-    'Aegis Layer': 0,
-    'Vector Drive': 0,
-    'Repair Nanites': 0,
-  });
+  const [selectedModules, setSelectedModules] = useState<Record<string, number>>(() => createPresetModuleState(MODULE_PRESETS[0].modules));
   const [importUrl, setImportUrl] = useState('');
   const [parsedPolicy, setParsedPolicy] = useState<BotPolicy | null>(null);
   const [showPromptModal, setShowPromptModal] = useState(false);
+  const [quickStartPending, setQuickStartPending] = useState(false);
 
   const ownParticipant = room?.participants.find((participant) => participant.playerId === playerId);
-  const canStart = room?.role === 'host' && room.players >= 2 && room.participants.every((participant) => participant.ready && participant.bot !== null);
+  const humanParticipants = room?.participants.filter((participant) => !participant.playerId.startsWith('system-')) ?? [];
+  const canStart = Boolean(
+    room?.role === 'host' &&
+    room.phase === 'lobby' &&
+    humanParticipants.length >= 1 &&
+    humanParticipants.every((participant) => participant.ready && participant.bot !== null)
+  );
+  const loadoutPoints = moduleLoadoutPoints(selectedModules);
+  const loadoutOverLimit = loadoutPoints > MODULE_POINT_LIMIT;
+  const strategyImportSummary = useMemo(() => {
+    if (!importUrl.trim()) return null;
+    try {
+      return createStrategyImportSummary(parseStrategyImportUrl(importUrl), language === 'zh' ? 'zh' : 'en');
+    } catch {
+      return null;
+    }
+  }, [importUrl, language]);
+  const briefingTicket = room?.code ?? 'TICKET';
+  const briefingCallsign = displayName.trim() || 'Pilot';
+  const briefingOpponents = useMemo(() => (
+    (room?.participants ?? [])
+      .filter((participant) => participant.playerId !== playerId)
+      .map((participant) => participant.displayName)
+  ), [playerId, room?.participants]);
+  const briefingModules = useMemo(() => (
+    moduleStateToList(selectedModules).map((entry) => entry.replace('-Lv', ' Lv'))
+  ), [selectedModules]);
+  const briefingUrl = generateBriefingUrl(briefingTicket, briefingCallsign);
+  const briefingPrompt = generateBriefingPromptForImportUrl({
+    ticket: briefingTicket,
+    callsign: briefingCallsign,
+    modules: briefingModules,
+    opponents: briefingOpponents,
+  });
 
   const ensurePlayerId = useCallback(() => {
     if (!playerIdRef.current) {
-      playerIdRef.current = globalThis.crypto?.randomUUID?.() ?? `player-${Date.now()}`;
+      let stored = '';
+      try {
+        stored = localStorage.getItem('astra_gambit_player_id') || '';
+      } catch {
+        stored = '';
+      }
+      playerIdRef.current = stored || globalThis.crypto?.randomUUID?.() || `player-${Date.now()}`;
+      try {
+        localStorage.setItem('astra_gambit_player_id', playerIdRef.current);
+      } catch (e) {
+        console.error(e);
+      }
       setPlayerId(playerIdRef.current);
     }
     return playerIdRef.current;
+  }, []);
+
+  const updateDisplayName = useCallback((value: string) => {
+    setDisplayName(value);
+    try {
+      localStorage.setItem('astra_gambit_callsign', value);
+    } catch (e) {
+      console.error(e);
+    }
   }, []);
 
   // Generate and set player ID immediately on mount to ensure the Gateway Key has a complete, unique suffix
@@ -1548,6 +1785,59 @@ function BattleRoomPanel({
     socket.send(JSON.stringify(message));
   }, []);
 
+  const applyStrategyImportUrl = useCallback((url: string) => {
+    const parsed = parseStrategyImportUrl(url);
+    const validation = validateStrategyImportUrl(parsed, {
+      ticket: room?.code,
+      callsigns: room?.participants.map((participant) => participant.displayName),
+    });
+
+    if (!validation.ok) {
+      throw new Error(validation.errors.join(' '));
+    }
+
+    const policy = parseImportUrl(url);
+    setImportUrl(url);
+    setParsedPolicy(normalizeBotPolicy(policy));
+    setSelectedBot('llm-strategy');
+
+    const parsedModules = parseModulesFromUrl(url);
+    if (parsedModules.length > 0) {
+      setSelectedModules(createModuleStateFromList(parsedModules));
+    }
+
+    setError(validation.warnings[0] ?? null);
+  }, [room?.code, room?.participants]);
+
+  const applySystemStrategy = useCallback((mode: SystemStrategyMode = 'auto', modulesOverride?: Record<string, number>) => {
+    const modules = moduleStateToList(modulesOverride ?? selectedModules);
+    const opponents = (room?.participants ?? [])
+      .filter((participant) => participant.playerId !== playerId)
+      .map((participant) => participant.displayName);
+    const parsed = createSystemStrategyImport({
+      ticket: room?.code ?? 'LOCAL',
+      callsign: displayName.trim() || 'Pilot',
+      modules,
+      opponents,
+      mode,
+      seed: Date.now(),
+    });
+    applyStrategyImportUrl(createStrategyImportUrl(parsed));
+  }, [applyStrategyImportUrl, displayName, playerId, room?.code, room?.participants, selectedModules]);
+
+  const applyModulePreset = useCallback((preset: Record<string, number>) => {
+    const nextModules = createPresetModuleState(preset);
+    setSelectedModules(nextModules);
+    setError(null);
+  }, []);
+
+  const applyRandomLoadout = useCallback(() => {
+    const nextModules = createRandomModuleState();
+    setSelectedModules(nextModules);
+    setError(null);
+    return nextModules;
+  }, []);
+
   useEffect(() => {
     return () => {
       socketRef.current?.close();
@@ -1563,19 +1853,7 @@ function BattleRoomPanel({
       setSelectedBot('llm-strategy');
     }
     if (self?.bot?.modules) {
-      const updatedModules: Record<string, number> = {
-        'Wing Swarm': 0, 'Missile Storm': 0, 'Overload Lance': 0,
-        'Phantom Echo': 0, 'Ghost Veil': 0, 'Blackout Pulse': 0,
-        'Aegis Layer': 0, 'Vector Drive': 0, 'Repair Nanites': 0
-      };
-      for (const modStr of self.bot.modules) {
-        const parts = modStr.split('-Lv');
-        const name = parts[0];
-        const lvl = parseInt(parts[1] || '1', 10);
-        if (name in updatedModules) {
-          updatedModules[name] = lvl;
-        }
-      }
+      const updatedModules = createModuleStateFromList(self.bot.modules);
       setSelectedModules((prev) => {
         const hasChanged = Object.entries(updatedModules).some(([k, v]) => prev[k] !== v);
         return hasChanged ? updatedModules : prev;
@@ -1614,9 +1892,7 @@ function BattleRoomPanel({
   }, [connectionStatus, ensurePlayerId, sendRoomMessage]);
 
   const syncDefenseFleet = () => {
-    const modulesList = Object.entries(selectedModules)
-      .filter(([, lvl]) => lvl > 0)
-      .map(([name, lvl]) => `${name}-Lv${lvl}`);
+    const modulesList = moduleStateToList(selectedModules);
 
     sendRoomMessage({
       v: 1,
@@ -1637,9 +1913,7 @@ function BattleRoomPanel({
     setChallengerOutcome(null);
     setShowOutcomeModal(false);
 
-    const modulesList = Object.entries(selectedModules)
-      .filter(([, lvl]) => lvl > 0)
-      .map(([name, lvl]) => `${name}-Lv${lvl}`);
+    const modulesList = moduleStateToList(selectedModules);
 
     // Build Challenger Fighter config
     let challengerController;
@@ -1720,7 +1994,7 @@ function BattleRoomPanel({
     requestAnimationFrame(loop);
   };
 
-  const createRoom = () => {
+  const createRoom = useCallback(() => {
     connectAndSend((playerId) => ({
       v: 1,
       type: 'room.create',
@@ -1730,9 +2004,9 @@ function BattleRoomPanel({
         maxPlayers: 4,
       },
     }));
-  };
+  }, [connectAndSend, displayName]);
 
-  const joinRoom = () => {
+  const joinRoom = useCallback(() => {
     const roomCode = roomCodeInput.trim().toUpperCase();
     if (!roomCode) {
       setError('Enter a room code first.');
@@ -1747,14 +2021,16 @@ function BattleRoomPanel({
         displayName: displayName.trim() || 'Pilot',
       },
     }));
-  };
+  }, [connectAndSend, displayName, roomCodeInput]);
 
   const selectCurrentBot = useCallback(() => {
     if (!room) return;
+    if (loadoutOverLimit) {
+      setError(tx(language, 'Loadout exceeds the 12 point limit.', '模组装配超过 12 点上限，请先降低等级。'));
+      return;
+    }
     const meta = botMetadata.find((item) => item.kind === selectedBot);
-    const modulesList = Object.entries(selectedModules)
-      .filter(([, lvl]) => lvl > 0)
-      .map(([name, lvl]) => `${name}-Lv${lvl}`);
+    const modulesList = moduleStateToList(selectedModules);
 
     sendRoomMessage({
       v: 1,
@@ -1771,14 +2047,12 @@ function BattleRoomPanel({
         },
       },
     });
-  }, [botMetadata, ensurePlayerId, parsedPolicy, room, selectedBot, selectedModules, sendRoomMessage]);
+  }, [botMetadata, ensurePlayerId, language, loadoutOverLimit, parsedPolicy, room, selectedBot, selectedModules, sendRoomMessage]);
 
   // Automatically sync bot selection and modules to the server whenever local selectedBot, selectedModules, or parsedPolicy changes
   useEffect(() => {
     if (!room || room.phase !== 'lobby') return;
-    const modulesList = Object.entries(selectedModules)
-      .filter(([, lvl]) => lvl > 0)
-      .map(([name, lvl]) => `${name}-Lv${lvl}`);
+    const modulesList = moduleStateToList(selectedModules);
     
     const self = room.participants.find((p) => p.playerId === playerId);
     const selfModules = self?.bot?.modules || [];
@@ -1793,8 +2067,12 @@ function BattleRoomPanel({
     selectCurrentBot();
   }, [room, playerId, selectedBot, selectedModules, parsedPolicy, selectCurrentBot]);
 
-  const toggleReady = () => {
+  const toggleReady = useCallback(() => {
     if (!room) return;
+    if (loadoutOverLimit) {
+      setError(tx(language, 'Loadout exceeds the 12 point limit.', '模组装配超过 12 点上限，请先降低等级。'));
+      return;
+    }
     sendRoomMessage({
       v: 1,
       type: 'room.ready',
@@ -1804,9 +2082,9 @@ function BattleRoomPanel({
         ready: !(ownParticipant?.ready ?? false),
       },
     });
-  };
+  }, [ensurePlayerId, language, loadoutOverLimit, ownParticipant?.ready, room, sendRoomMessage]);
 
-  const startOnlineMatch = () => {
+  const startOnlineMatch = useCallback(() => {
     if (!room) return;
     sendRoomMessage({
       v: 1,
@@ -1816,7 +2094,54 @@ function BattleRoomPanel({
         playerId: ensurePlayerId(),
       },
     });
-  };
+  }, [ensurePlayerId, room, sendRoomMessage]);
+
+  const startQuickPlay = useCallback(() => {
+    const nextModules = applyRandomLoadout();
+    setRoomSubMode('multiplayer');
+    setQuickStartPending(true);
+    if (room) {
+      try {
+        applySystemStrategy('random', nextModules);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } else {
+      createRoom();
+    }
+    setError(tx(
+      language,
+      'Quick play armed: random loadout, system strategy, and ready state will be applied as soon as the room is available.',
+      '小白快速模式已启动：系统会随机装配、生成策略，并在房间可用后自动标记就绪。'
+    ));
+  }, [applyRandomLoadout, applySystemStrategy, createRoom, language, room]);
+
+  useEffect(() => {
+    if (!quickStartPending || !room || room.phase !== 'lobby') return;
+    try {
+      applySystemStrategy('random');
+      if (!ownParticipant?.ready) {
+        sendRoomMessage({
+          v: 1,
+          type: 'room.ready',
+          payload: {
+            roomId: room.roomId,
+            playerId: ensurePlayerId(),
+            ready: true,
+          },
+        });
+      }
+      setQuickStartPending(false);
+      setError(tx(
+        language,
+        'Quick play is ready. Host can press Start Match; the server will add system agents automatically.',
+        '快速模式已配置完成。房主可直接点击“启动协议仿真战斗”，服务器会自动补齐系统代理。'
+      ));
+    } catch (err) {
+      setQuickStartPending(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [applySystemStrategy, ensurePlayerId, language, ownParticipant?.ready, quickStartPending, room, sendRoomMessage]);
 
   const challengeOpponents = useMemo(() => {
     const index = ladderList.findIndex((e) => e.playerId === playerId);
@@ -1829,7 +2154,7 @@ function BattleRoomPanel({
   }, [ladderList, playerId]);
 
   return (
-    <div className="absolute inset-0 flex flex-col z-10 text-[#4a5568] bg-[#eef2f7]">
+    <div className="astra-fui absolute inset-0 flex flex-col z-10 text-[#4a5568] bg-[#eef2f7]">
       <MenuBackground />
       <div className="relative z-10 flex h-full flex-col px-4 py-4">
         <div className="flex items-center gap-3">
@@ -1891,10 +2216,17 @@ function BattleRoomPanel({
                   {tx(language, 'Display name', '席位显示代号')}
                   <input
                     value={displayName}
-                    onChange={(event) => setDisplayName(event.target.value)}
+                    onChange={(event) => updateDisplayName(event.target.value)}
                     className="mt-1.5 w-full neu-input px-3.5 py-2 text-sm"
                   />
                 </label>
+
+                <button
+                  onClick={startQuickPlay}
+                  className="w-full rounded-xl border border-cyan-300/40 bg-cyan-400/15 px-4 py-3 text-sm font-black text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.28)] transition-all active:scale-95"
+                >
+                  {tx(language, 'Novice Quick Play', '小白快速模式：一键配置并准备')}
+                </button>
 
                 <button
                   onClick={createRoom}
@@ -1926,6 +2258,13 @@ function BattleRoomPanel({
                     <p className="text-3xl font-black text-[#6d8bb0] tracking-wider mt-0.5">{room.code}</p>
                     <p className="mt-1.5 text-xs text-[#718096] font-bold uppercase">
                       {tx(language, room.phase, room.phase === 'lobby' ? '大厅组网中' : '对局仿真中')} · {room.readyPlayers}/{room.players} {tx(language, 'ready', '就绪')}
+                    </p>
+                    <p className="mt-2 text-[11px] font-bold text-[#718096] leading-relaxed">
+                      {tx(
+                        language,
+                        'Solo hosts can start after ready. The server auto-fills system agents to reach the battle roster.',
+                        '单人房主标记就绪后也可以开战，服务器会自动补齐系统代理席位。'
+                      )}
                     </p>
                   </div>
                 )}
@@ -2069,7 +2408,93 @@ function BattleRoomPanel({
           </div>
 
           <div className="min-h-0 overflow-y-auto rounded-[24px] neu-card border border-white/60 bg-[#eef2f7] p-5 flex flex-col gap-4">
-            {/* Bot Selection and Modules Loadout interfaces hidden per user request; all configured automatically via aiURL */}
+            <div className="rounded-2xl border border-cyan-300/20 bg-slate-950/40 p-3.5 shadow-[inset_0_0_18px_rgba(34,211,238,0.08)]">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                    {tx(language, 'Module Loadout', '模组装配')}
+                  </p>
+                  <p className="mt-1 text-[11px] font-bold text-[#718096]">
+                    {tx(language, 'Pick levels. Cost equals level. Max 12 points.', '选择等级，等级即消耗，最多 12 点。')}
+                  </p>
+                </div>
+                <div className={`rounded-xl px-3 py-2 text-right font-black ${loadoutOverLimit ? 'bg-red-500/15 text-red-400' : 'bg-cyan-400/10 text-cyan-300'}`}>
+                  <p className="text-[9px] uppercase tracking-wider">{tx(language, 'Points', '点数')}</p>
+                  <p className="text-lg leading-none">{loadoutPoints}/{MODULE_POINT_LIMIT}</p>
+                </div>
+              </div>
+
+              <div className="mb-3 grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={applyRandomLoadout}
+                  className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-2 py-1.5 text-[10px] font-black text-cyan-200 active:scale-95"
+                >
+                  {tx(language, 'Random', '随机')}
+                </button>
+                {MODULE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    onClick={() => applyModulePreset(preset.modules)}
+                    className="rounded-lg border border-white/15 bg-white/5 px-2 py-1.5 text-[10px] font-black text-[#4a5568] active:scale-95"
+                  >
+                    {tx(language, preset.en, preset.zh)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid gap-2">
+                {MODULE_CATALOG.map((module) => {
+                  const currentLevel = selectedModules[module.name] ?? 0;
+                  return (
+                    <div key={module.name} className="rounded-xl border border-white/10 bg-black/10 p-2.5">
+                      <div className="flex items-start gap-2">
+                        <span className="mt-0.5 inline-flex h-7 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-300/25 bg-cyan-300/10 text-[10px] font-black text-cyan-200">
+                          {module.short}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-black text-[#2d3748]">
+                            {tx(language, module.name, module.zh)}
+                          </p>
+                          <p className="mt-0.5 text-[10px] font-bold leading-relaxed text-[#718096]">
+                            {tx(language, module.descEn, module.descZh)}
+                          </p>
+                          <p className="mt-1 text-[9px] font-bold leading-relaxed text-cyan-500/90">
+                            {tx(language, module.hintEn, module.hintZh)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-2 grid grid-cols-4 gap-1.5">
+                        {[0, 1, 2, 3].map((level) => (
+                          <button
+                            key={level}
+                            type="button"
+                            onClick={() => {
+                              setSelectedModules((prev) => ({ ...prev, [module.name]: level }));
+                              setError(null);
+                            }}
+                            className={`rounded-lg border px-2 py-1.5 text-[10px] font-black transition-all active:scale-95 ${
+                              currentLevel === level
+                                ? 'border-cyan-300/60 bg-cyan-300/20 text-cyan-100 shadow-[0_0_10px_rgba(34,211,238,0.18)]'
+                                : 'border-white/10 bg-white/5 text-[#718096]'
+                            }`}
+                          >
+                            {level === 0 ? tx(language, 'Off', '关闭') : `Lv${level}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {loadoutOverLimit && (
+                <p className="mt-3 rounded-lg border border-red-400/20 bg-red-500/10 px-2.5 py-2 text-[11px] font-bold text-red-400">
+                  {tx(language, 'Over limit. Lower module levels before readying.', '已超过 12 点上限，请降低模组等级后再标记就绪。')}
+                </p>
+              )}
+            </div>
 
             {/* AI Command Briefing & Strategy Import */}
             <div className="border-t border-white/30 pt-3 flex flex-col gap-2">
@@ -2113,6 +2538,50 @@ function BattleRoomPanel({
                     {tx(language, 'Generate AI Prompt', '1. 生成战术提示词 (Prompt)')}
                   </button>
 
+                  <div className="rounded-xl border border-white/15 bg-black/10 p-2.5">
+                    <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-[#718096]">
+                      {tx(language, 'Briefing URL', 'Briefing 简报链接')}
+                    </p>
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <code className="truncate rounded-lg bg-black/10 px-2 py-1.5 text-[10px] font-black text-cyan-300" title={briefingUrl}>
+                        {briefingUrl}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(briefingUrl);
+                          setError(tx(language, 'Briefing URL copied.', 'Briefing 简报链接已复制。'));
+                        }}
+                        className="rounded-lg border border-cyan-300/20 px-2 text-[10px] font-black text-cyan-200 active:scale-95"
+                      >
+                        {tx(language, 'Copy', '复制')}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          applySystemStrategy('auto');
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : String(err));
+                        }
+                      }}
+                      className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-[11px] font-black text-cyan-200 active:scale-95"
+                    >
+                      {tx(language, 'System Strategy', '系统策略')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startQuickPlay}
+                      className="rounded-xl border border-pink-300/25 bg-pink-400/10 px-3 py-2 text-[11px] font-black text-pink-200 active:scale-95"
+                    >
+                      {tx(language, 'Quick Play', '小白快速')}
+                    </button>
+                  </div>
+
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-[#718096]">
                     {tx(language, '2. Paste Strategy Import URL', '2. 粘贴外部 AI 战术导入链接')}
                     <input
@@ -2123,29 +2592,7 @@ function BattleRoomPanel({
                         setImportUrl(url);
                         if (url.includes('import?')) {
                           try {
-                            const policy = parseImportUrl(url);
-                            setParsedPolicy(normalizeBotPolicy(policy));
-                            setSelectedBot('llm-strategy');
-                            
-                            // Parse modules from the URL and update selectedModules state!
-                            const parsedModules = parseModulesFromUrl(url);
-                            if (parsedModules.length > 0) {
-                              const updatedModules = {
-                                'Wing Swarm': 0, 'Missile Storm': 0, 'Overload Lance': 0,
-                                'Phantom Echo': 0, 'Ghost Veil': 0, 'Blackout Pulse': 0,
-                                'Aegis Layer': 0, 'Vector Drive': 0, 'Repair Nanites': 0
-                              };
-                              for (const modStr of parsedModules) {
-                                const parts = modStr.split('-Lv');
-                                const name = parts[0];
-                                const lvl = parseInt(parts[1] || '1', 10);
-                                if (name in updatedModules) {
-                                  updatedModules[name as keyof typeof updatedModules] = lvl;
-                                }
-                              }
-                              setSelectedModules(updatedModules);
-                            }
-                            setError(null);
+                            applyStrategyImportUrl(url);
                           } catch {
                             setError(tx(language, 'Malformed Import URL.', '无效的战术导入链接。'));
                           }
@@ -2241,11 +2688,8 @@ function BattleRoomPanel({
                             const strategyUrl = resData.strategyUrl || resData.url || (typeof resData === 'string' ? resData : '');
                             
                             if (strategyUrl && strategyUrl.includes('import?')) {
-                              const policy = parseImportUrl(strategyUrl);
-                              setParsedPolicy(normalizeBotPolicy(policy));
-                              setSelectedBot('llm-strategy');
+                              applyStrategyImportUrl(strategyUrl);
                               setAgentStatus('success');
-                              setError(null);
                             } else {
                               throw new Error('No strategy URL found in response');
                             }
@@ -2270,11 +2714,8 @@ function BattleRoomPanel({
                       const mockFormation = ['aggressive', 'balanced', 'conservative'][Math.floor(Math.random() * 3)];
                       const mockUrl = `https://astra-gambit.com/import?t=${room?.code || 'LOCAL'}&v=1&target=${mockTarget}&avoid=none&betray=never&skill=${mockFormation}&survive=survival_first&promise=honor`;
                       
-                      const policy = parseImportUrl(mockUrl);
-                      setParsedPolicy(normalizeBotPolicy(policy));
-                      setSelectedBot('llm-strategy');
+                      applyStrategyImportUrl(mockUrl);
                       setAgentStatus('success');
-                      setError(null);
                       alert(tx(language, 'Successfully simulated Agent push event!', '智能 Agent 密钥匹配，已成功连接并推送最新战术配置！'));
                     }}
                     className="w-full border border-dashed border-[#6d8bb0]/40 text-[#6d8bb0] rounded-xl py-1.5 px-3 text-[10px] font-black bg-[#6d8bb0]/5 hover:bg-[#6d8bb0]/10 transition-all active:scale-95"
@@ -2304,13 +2745,32 @@ function BattleRoomPanel({
                   </div>
                 </div>
               )}
+
+              {strategyImportSummary && (
+                <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-3 text-[10px] font-bold text-[#4a5568]">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
+                      {tx(language, 'Pre-Battle Gambit', '战前博弈自动动作')}
+                    </p>
+                    <span className="rounded bg-cyan-300/10 px-1.5 py-0.5 text-[8px] font-black text-cyan-200">
+                      {strategyImportSummary.title}
+                    </span>
+                  </div>
+                  <div className="grid gap-1 leading-relaxed">
+                    <p>{tx(language, 'Declaration: ', '公开宣言: ')}<span className="text-[#718096]">{strategyImportSummary.declaration}</span></p>
+                    <p>{tx(language, 'Cipher: ', '秘密密信: ')}<span className="text-[#718096]">{strategyImportSummary.cipherMessage}</span></p>
+                    <p>{tx(language, 'Verification: ', '验证动作: ')}<span className="text-[#718096]">{strategyImportSummary.verification}</span></p>
+                    <p>{tx(language, 'Vote: ', '投票倾向: ')}<span className="text-[#718096]">{strategyImportSummary.vote}</span></p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Sync Bot & Loadout button hidden as synchronization is now fully automatic */}
 
             <button
               onClick={toggleReady}
-              disabled={!room || room.phase !== 'lobby'}
+              disabled={!room || room.phase !== 'lobby' || loadoutOverLimit}
               className={`mb-1 w-full rounded-xl py-3 font-black text-sm active:scale-95 disabled:opacity-45 disabled:pointer-events-none transition-all ${
                 ownParticipant?.ready ? 'neu-btn-primary' : 'neu-btn text-[#4a5568]'
               }`}
@@ -2320,7 +2780,7 @@ function BattleRoomPanel({
 
             <button
               onClick={startOnlineMatch}
-              disabled={!canStart}
+              disabled={!canStart || loadoutOverLimit}
               className="mb-2 w-full rounded-xl neu-btn-primary py-3.5 font-black text-sm active:scale-95 disabled:opacity-45 disabled:pointer-events-none transition-all"
             >
               {tx(language, 'Start Match', '启动协议仿真战斗')}
@@ -2336,6 +2796,11 @@ function BattleRoomPanel({
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-black text-[#2d3748] flex items-center gap-1.5">
                         {participant.displayName}
+                        {participant.playerId.startsWith('system-') && (
+                          <span className="rounded bg-cyan-300/10 px-1.5 py-0.5 text-[8px] font-black text-cyan-300">
+                            {tx(language, 'SYS', '系统')}
+                          </span>
+                        )}
                         {participant.agentConnected && (
                           <span className="inline-block w-2 h-2 rounded-full bg-green-500 shadow-[0_0_4px_rgba(72,187,120,0.5)] animate-pulse" title={tx(language, 'Agent Connected', '智能代理已连接')} />
                         )}
@@ -2347,6 +2812,15 @@ function BattleRoomPanel({
                     <p className="mt-1 text-[10px] font-bold text-[#718096]">
                       {participant.isHost ? tx(language, 'Host', '主控舱 (Host)') : tx(language, 'Guest', '副舱 (Guest)')} · <span className="text-[#4a5568] font-bold">{participant.bot?.label ?? tx(language, 'No bot selected', '未同步策略 AI')}</span>
                     </p>
+                    {participant.bot?.modules && participant.bot.modules.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {participant.bot.modules.map((module) => (
+                          <span key={module} className="rounded border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-black text-cyan-200">
+                            {module.replace('-Lv', ' Lv')}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2385,77 +2859,14 @@ function BattleRoomPanel({
             
             <textarea
               readOnly
-              value={
-                language === 'zh'
-                  ? `你正在为《Astra Gambit / 空域协议》生成一条策略导入链接。
- 
-你不是在驾驶战机，你只需要为该席位生成战术协议。战斗将由官方 App 的本地 BattleEngine 执行。
- 
-你的席位：${displayName}
-对局票据（ticket）：${room?.code || 'TICKET'}
- 
-你的模组：
-${Object.entries(selectedModules)
-  .filter(([, lvl]) => lvl > 0)
-  .map(([name, lvl]) => `- ${tx(language, name, name === 'Wing Swarm' ? '僚机蜂群' : name === 'Missile Storm' ? '导弹风暴' : name === 'Overload Lance' ? '超载长枪' : name === 'Phantom Echo' ? '幻影回响' : name === 'Ghost Veil' ? '幽灵面纱' : name === 'Blackout Pulse' ? '黯灭脉冲' : name === 'Aegis Layer' ? '宙斯盾层' : name === 'Vector Drive' ? '矢量引擎' : '纳米修复')} Lv${lvl}`)
-  .join('\n') || '- 无'}
- 
-其他席位：
-${(room?.participants || []).filter(p => p.playerId !== playerId).map(p => `- ${p.displayName}`).join('\n') || '- 无'}
- 
-请根据以下枚举选择合适的策略：
- 
-target: lowest_hp, highest_threat, nearest, specific:${(room?.participants || []).map(p => p.displayName).join(', ') || ''}
-avoid: none, ${(room?.participants || []).map(p => p.displayName).join(', ') || ''}
-betray: never, final3, target_low40, power_spike  
-skill: aggressive, balanced, conservative  
-survive: trade, def50, survival_first  
-promise: honor, opportunistic, ignore
- 
-Import URL 模板：
-https://astra-gambit.com/import?t=${room?.code || 'TICKET'}&v=1&target=...&avoid=...&betray=...&skill=...&survive=...&promise=...
- 
-请只返回一条完整的 Import URL，不要解释、不要 Markdown，也不要其他文字。`
-                  : `You are generating a strategy import link for "Astra Gambit / Airspace Protocol".
- 
-You are not flying the jet yourself, you only need to output a tactical protocol for this seat. The combat will be simulated locally by the official App's BattleEngine.
- 
-Your Seat: ${displayName}
-Match Ticket (ticket): ${room?.code || 'TICKET'}
- 
-Your Modules:
-${Object.entries(selectedModules)
-  .filter(([, lvl]) => lvl > 0)
-  .map(([name, lvl]) => `- ${name} Lv${lvl}`)
-  .join('\n') || '- None'}
- 
-Other Seats:
-${(room?.participants || []).filter(p => p.playerId !== playerId).map(p => `- ${p.displayName}`).join('\n') || '- None'}
- 
-Please select appropriate strategies based on the following enums:
- 
-target: lowest_hp, highest_threat, nearest, specific:${(room?.participants || []).map(p => p.displayName).join(', ') || ''}
-avoid: none, ${(room?.participants || []).map(p => p.displayName).join(', ') || ''}
-betray: never, final3, target_low40, power_spike  
-skill: aggressive, balanced, conservative  
-survive: trade, def50, survival_first  
-promise: honor, opportunistic, ignore
- 
-Import URL Template:
-https://astra-gambit.com/import?t=${room?.code || 'TICKET'}&v=1&target=...&avoid=...&betray=...&skill=...&survive=...&promise=...
- 
-Please ONLY return one complete Import URL. Do not explain, do not use Markdown, and do not output any other text.`
-              }
+              value={briefingPrompt}
               className="flex-1 w-full rounded-2xl neu-input p-4 text-xs text-[#4a5568] font-mono outline-none resize-none overflow-y-auto mb-4 min-h-[220px]"
             />
             
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  const text = language === 'zh'
-                    ? `你正在为《Astra Gambit / 空域协议》生成一条策略导入链接。\n\n你不是在驾驶战机，你只需要为该席位生成战术协议。战斗将由官方 App 的本地 BattleEngine 执行。\n\n你的席位：${displayName}\n对局票据（ticket）：${room?.code || 'TICKET'}\n\n你的模组：\n${Object.entries(selectedModules).filter(([, lvl]) => lvl > 0).map(([name, lvl]) => `- ${tx(language, name, name === 'Wing Swarm' ? '僚机蜂群' : name === 'Missile Storm' ? '导弹风暴' : name === 'Overload Lance' ? '超载长枪' : name === 'Phantom Echo' ? '幻影回响' : name === 'Ghost Veil' ? '幽灵面纱' : name === 'Blackout Pulse' ? '黯灭脉冲' : name === 'Aegis Layer' ? '宙斯盾层' : name === 'Vector Drive' ? '矢量引擎' : '纳米修复')} Lv${lvl}`).join('\n') || '- 无'}\n\n其他席位：\n${(room?.participants || []).filter(p => p.playerId !== playerId).map(p => `- ${p.displayName}`).join('\n') || '- 无'}\n\n请根据以下枚举选择合适的策略：\n\ntarget: lowest_hp, highest_threat, nearest, specific:${(room?.participants || []).map(p => p.displayName).join(', ') || ''}\navoid: none, ${(room?.participants || []).map(p => p.displayName).join(', ') || ''}\nbetray: never, final3, target_low40, power_spike  \nskill: aggressive, balanced, conservative  \nsurvive: trade, def50, survival_first  \npromise: honor, opportunistic, ignore\n\nImport URL 模板：\nhttps://astra-gambit.com/import?t=${room?.code || 'TICKET'}&v=1&target=...&avoid=...&betray=...&skill=...&survive=...&promise=...\n\n请只返回一条完整的 Import URL，不要解释、不要 Markdown，也不要其他文字。`
-                    : `You are generating a strategy import link for "Astra Gambit / Airspace Protocol".\n\nYou are not flying the jet yourself, you only need to output a tactical protocol for this seat. The combat will be simulated locally by the official App's BattleEngine.\n\nYour Seat: ${displayName}\nMatch Ticket (ticket): ${room?.code || 'TICKET'}\n\nYour Modules:\n${Object.entries(selectedModules).filter(([, lvl]) => lvl > 0).map(([name, lvl]) => `- ${name} Lv${lvl}`).join('\n') || '- None'}\n\nOther Seats:\n${(room?.participants || []).filter(p => p.playerId !== playerId).map(p => `- ${p.displayName}`).join('\n') || '- None'}\n\nPlease select appropriate strategies based on the following enums:\n\ntarget: lowest_hp, highest_threat, nearest, specific:${(room?.participants || []).map(p => p.displayName).join(', ') || ''}\navoid: none, ${(room?.participants || []).map(p => p.displayName).join(', ') || ''}\nbetray: never, final3, target_low40, power_spike  \nskill: aggressive, balanced, conservative  \nsurvive: trade, def50, survival_first  \npromise: honor, opportunistic, ignore\n\nImport URL Template:\nhttps://astra-gambit.com/import?t=${room?.code || 'TICKET'}&v=1&target=...&avoid=...&betray=...&skill=...&survive=...&promise=...\n\nPlease ONLY return one complete Import URL. Do not explain, do not use Markdown, and do not output any other text.`;
-                  navigator.clipboard.writeText(text);
+                  navigator.clipboard.writeText(briefingPrompt);
                   alert(tx(language, 'Command Prompt copied to clipboard!', '战术规划指令已成功复制到剪贴板！'));
                 }}
                 className="flex-1 neu-btn-primary py-3 px-4 font-black rounded-xl text-sm transition-all active:scale-95"
