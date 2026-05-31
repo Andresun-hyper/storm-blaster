@@ -23,6 +23,18 @@ export type {
   StrategyRefreshReason,
   StrategyTargetPriority,
   StrategyTokenBudget,
+  StrategyImportAvoid,
+  StrategyImportBetrayal,
+  StrategyImportPromise,
+  StrategyImportSkill,
+  StrategyImportSummary,
+  StrategyImportSurvive,
+  StrategyImportTarget,
+  StrategyImportUrl,
+  StrategyImportValidationContext,
+  StrategyImportValidationResult,
+  StrategySummaryLanguage,
+  SystemStrategyMode,
 } from './policy';
 export type { StrategyPlanner } from './StrategyPlanner';
 
@@ -45,6 +57,8 @@ export {
 export type { LLMStrategyBotOptions } from './LLMStrategyBot';
 export { MockStrategyPlanner, createMockStrategyPlanner } from './MockStrategyPlanner';
 export type { MockStrategyPlannerOptions } from './MockStrategyPlanner';
+export { KimiStrategyPlanner, createKimiStrategyPlanner } from './KimiStrategyPlanner';
+export type { KimiStrategyPlannerOptions } from './KimiStrategyPlanner';
 export { createStrategyPlannerContext } from './StrategyPlanner';
 export type { StrategyPlannerOptions } from './StrategyPlanner';
 export {
@@ -54,7 +68,16 @@ export {
   createStrategyObservationDigest,
   createStrategyPrompt,
   estimateTokens,
+  compileImportUrlToBotPolicy,
+  createStrategyImportSummary,
+  createStrategyImportUrl,
+  createSystemStrategyImport,
   normalizeBotPolicy,
   summarizeStrategyBudget,
+  generateBriefingPromptForImportUrl,
+  generateBriefingUrl,
   parseImportUrl,
+  parseStrategyImportUrl,
+  validateStrategyImportUrl,
+  parseModulesFromUrl,
 } from './policy';

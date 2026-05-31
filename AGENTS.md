@@ -38,3 +38,34 @@ Important files:
 ## Commands
 
 After changing TypeScript or React code, run:
+```bash
+npm run build
+```
+
+## AI Coding Agent Integration & Strategy Gateway Binding
+
+Whenever the Storm Blaster game client is loaded or a match room is joined/created, the server automatically writes the active Match Room, Player ID, and Gateway Key to a file named `agent-gateway.json` in the project root directory.
+
+AI coding agents (like Claude code, codex, kimi code, or Antigravity) can read this file to obtain the Gateway Key and automatically connect and push strategies/modules to the game client!
+
+### Automated Strategy Push CLI Script
+
+You can run the pre-built push script in this repository:
+```bash
+node scripts/push-strategy.js --target=lowest_hp --skill=aggressive --modules="Wing Swarm-Lv3,Missile Storm-Lv2"
+```
+
+Parameters:
+- `--target`: lowest_hp, highest_threat, nearest
+- `--avoid`: none, or player callsign
+- `--betray`: never, final3, target_low40, power_spike
+- `--skill`: aggressive, balanced, conservative
+- `--survive`: trade, def50, survival_first
+- `--promise`: honor, opportunistic, ignore
+- `--modules`: comma-separated modules and levels (e.g. "Wing Swarm-Lv3,Missile Storm-Lv2")
+
+### Manual Strategy Push API
+
+Or push directly via HTTP POST:
+- **Endpoint**: `http://localhost:3001/api/agent/strategy`
+- **Payload**: `{ "key": "<gatewayKey>", "strategyUrl": "<importUrl>" }`

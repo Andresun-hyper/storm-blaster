@@ -16,7 +16,7 @@ export class RoomManager {
       code,
       hostId: request.playerId,
       displayName: request.displayName,
-      maxPlayers: request.maxPlayers ?? 2,
+      maxPlayers: request.maxPlayers ?? 5,
     });
 
     this.roomsById.set(roomId, room);
@@ -83,7 +83,11 @@ export class RoomManager {
     const room = this.roomsById.get(connection.roomId);
     if (!room) return;
 
-    room.detachConnection(connection.playerId, connection.id);
+    if (connection.isAgent) {
+      room.detachAgentConnection(connection.playerId, connection.id);
+    } else {
+      room.detachConnection(connection.playerId, connection.id);
+    }
   }
 
   private requireRoom(roomId: string): BattleRoom {

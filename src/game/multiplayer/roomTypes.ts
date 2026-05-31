@@ -17,6 +17,7 @@ export interface RoomParticipantState {
   bot: BotSelection | null;
   joinedAt: number;
   lastSeenAt: number;
+  agentConnected?: boolean;
 }
 
 export interface RoomState<TState = unknown, TSummary = unknown> {

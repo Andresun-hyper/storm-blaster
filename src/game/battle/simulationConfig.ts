@@ -21,8 +21,8 @@ export const DEFAULT_BATTLE_SIMULATION_CONFIG: NormalizedBattleSimulationConfig 
   fixedTimestep: 1 / 60,
   maxTicks: 60 * 120,
   collectibleSpawnInterval: 3,
-  projectileSpeed: 520,
-  collectibleFallSpeed: 95,
+  projectileSpeed: 330,
+  collectibleFallSpeed: 70,
 };
 
 export function normalizeBattleSimulationConfig(

@@ -16,6 +16,44 @@ type ServerBattleReport = MatchReport<BattleReport>;
 
 const SNAPSHOT_INTERVAL_MS = 1000 / 30;
 const MATCH_STEP_SECONDS = 1 / 30;
+const SYSTEM_AGENT_TEMPLATES: readonly { callsign: string; bot: BotSelection }[] = [
+  {
+    callsign: 'NOVA-13',
+    bot: {
+      botId: 'aggressive',
+      label: 'System Agent / Assault',
+      difficulty: 'normal',
+      modules: ['Wing Swarm Lv2', 'Missile Storm Lv2', 'Overload Lance Lv2'],
+    },
+  },
+  {
+    callsign: 'ORBIT-22',
+    bot: {
+      botId: 'defensive',
+      label: 'System Agent / Survival',
+      difficulty: 'normal',
+      modules: ['Aegis Layer Lv2', 'Repair Wisp Lv2', 'Vector Drive Lv2'],
+    },
+  },
+  {
+    callsign: 'VANTA-04',
+    bot: {
+      botId: 'collector',
+      label: 'System Agent / Control',
+      difficulty: 'normal',
+      modules: ['Blackout Pulse Lv2', 'Wing Swarm Lv2', 'Aegis Layer Lv2'],
+    },
+  },
+  {
+    callsign: 'LYRA-31',
+    bot: {
+      botId: 'llm-strategy',
+      label: 'System Agent / Deception',
+      difficulty: 'normal',
+      modules: ['Ghost Veil Lv2', 'Phantom Echo Lv2', 'Vector Drive Lv2'],
+    },
+  },
+];
 
 export class BattleRoom {
   readonly roomId: string;
@@ -26,6 +64,7 @@ export class BattleRoom {
   private readonly hostId: PlayerId;
   private readonly participants = new Map<PlayerId, RoomParticipantState>();
   private readonly connections = new Map<PlayerId, WebSocketConnection>();
+  private readonly agentConnections = new Map<PlayerId, WebSocketConnection>();
   private readonly roomState: RoomState<BattleState, BattleReport>;
   private engine: LocalBattleEngine | null = null;
   private tickHandle: NodeJS.Timeout | null = null;
@@ -42,7 +81,7 @@ export class BattleRoom {
     this.code = options.code;
     this.createdAt = options.createdAt ?? Date.now();
     this.hostId = options.hostId;
-    this.maxPlayers = Math.max(2, options.maxPlayers);
+    this.maxPlayers = Math.min(5, Math.max(3, options.maxPlayers));
 
     const host: RoomParticipantState = {
       playerId: options.hostId,
@@ -147,6 +186,46 @@ export class BattleRoom {
     this.syncRoomState();
   }
 
+  attachAgentConnection(playerId: PlayerId, connection: WebSocketConnection): void {
+    const participant = this.participants.get(playerId);
+    if (!participant) {
+      throw new Error('Participant is not in this room.');
+    }
+
+    const previous = this.agentConnections.get(playerId);
+    if (previous && previous !== connection && previous.isOpen()) {
+      previous.close(4000, 'replaced-by-new-agent-connection');
+    }
+
+    this.agentConnections.set(playerId, connection);
+    participant.agentConnected = true;
+    participant.lastSeenAt = Date.now();
+    connection.roomId = this.roomId;
+    connection.playerId = playerId;
+    connection.isAgent = true; // Flag connection as an Agent
+    this.syncRoomState();
+    this.sendRoomUpdate();
+  }
+
+  detachAgentConnection(playerId: PlayerId, connectionId?: string): void {
+    const existing = this.agentConnections.get(playerId);
+    if (!existing) return;
+
+    if (connectionId && existing.id !== connectionId) {
+      return;
+    }
+
+    this.agentConnections.delete(playerId);
+    const participant = this.participants.get(playerId);
+    if (participant) {
+      participant.agentConnected = false;
+      participant.lastSeenAt = Date.now();
+    }
+
+    this.syncRoomState();
+    this.sendRoomUpdate();
+  }
+
   selectBot(playerId: PlayerId, bot: BotSelection | null): RoomParticipantState {
     const participant = this.requireParticipant(playerId);
     this.assertLobby();
@@ -174,7 +253,7 @@ export class BattleRoom {
   canStartMatch(): boolean {
     return (
       this.roomState.phase === 'lobby' &&
-      this.participants.size >= 2 &&
+      this.participants.size >= 1 &&
       [...this.participants.values()].every(
         (participant) => participant.connected && participant.ready && participant.bot !== null
       )
@@ -184,9 +263,10 @@ export class BattleRoom {
   startMatch(playerId: PlayerId): MatchStateSnapshot<BattleState> {
     this.assertHost(playerId);
     this.assertLobby();
+    this.ensureSystemAgents(this.maxPlayers);
 
     if (!this.canStartMatch()) {
-      throw new Error('All participants must select a bot and mark ready before starting.');
+      throw new Error('All human participants must select a bot and mark ready before starting.');
     }
 
     const fighters = this.createFighters();
@@ -270,9 +350,32 @@ export class BattleRoom {
         id: participant.playerId,
         name: participant.displayName,
         bot: controller,
+        modules: participant.bot.modules,
         color: undefined,
       };
     });
+  }
+
+  private ensureSystemAgents(minPlayers: number): void {
+    let nextIndex = 0;
+    while (this.participants.size < minPlayers && this.participants.size < this.maxPlayers) {
+      const template = SYSTEM_AGENT_TEMPLATES[nextIndex % SYSTEM_AGENT_TEMPLATES.length];
+      const playerId = `system-${template.callsign.toLowerCase()}-${this.participants.size + 1}`;
+      nextIndex += 1;
+      if (this.participants.has(playerId)) continue;
+
+      this.participants.set(playerId, {
+        playerId,
+        displayName: template.callsign,
+        connected: true,
+        ready: true,
+        isHost: false,
+        bot: template.bot,
+        joinedAt: Date.now(),
+        lastSeenAt: Date.now(),
+      });
+    }
+    this.syncRoomState();
   }
 
   private createSeed(): number {

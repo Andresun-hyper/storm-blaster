@@ -33,6 +33,7 @@ export interface LocalBattleEngineOptions {
 export class LocalBattleEngine {
   private readonly config: NormalizedBattleSimulationConfig;
   private readonly controllers = new Map<string, BattleBotController | undefined>();
+  private readonly moduleEffects = new Map<string, FighterModuleEffects>();
   private readonly listeners = new Set<BattleStateListener>();
   private readonly rng: SeededRandom;
   private state: BattleState;
@@ -160,6 +161,8 @@ export class LocalBattleEngine {
   }
 
   private createFighter(config: BattleFighterConfig, index: number, total: number): BattleFighterState {
+    const effects = createModuleEffects(config.modules ?? []);
+    this.moduleEffects.set(config.id, effects);
     const width = Math.max(28, this.config.arena.width * 0.1);
     const height = width;
     const spacing = this.config.arena.width / (total + 1);
@@ -173,8 +176,17 @@ export class LocalBattleEngine {
       config.bot?.name ??
       config.bot?.id ??
       'compatible-bot';
-    const maxHp = config.maxHp ?? 12;
+    const maxHp = config.maxHp ?? 12 + effects.aegisLayer * 2 + effects.phantomEcho;
     const lives = config.lives ?? 3;
+    const baseSpeed = config.speed ?? 145;
+    const speed = baseSpeed * (1 + effects.vectorDrive * 0.2 + (effects.ghostVeil >= 3 ? 0.08 : 0));
+    const baseDamage = config.damage ?? 2;
+    const damage = baseDamage + effects.overloadLance * 0.75;
+    const fireCooldown = clamp(
+      (config.fireCooldown ?? 0.42) * (1 - effects.wingSwarm * 0.04 - effects.missileStorm * 0.06) + effects.overloadLance * 0.04,
+      0.18,
+      0.7
+    );
 
     return {
       id: config.id,
@@ -189,16 +201,19 @@ export class LocalBattleEngine {
       maxHp,
       lives,
       maxLives: lives,
-      speed: config.speed ?? 260,
-      damage: config.damage ?? 2,
-      fireCooldown: config.fireCooldown ?? 0.42,
+      speed,
+      damage,
+      fireCooldown,
       fireTimer: 0,
-      shield: 0,
+      shield: effects.aegisLayer,
       rageTimer: 0,
       invincibleTimer: 0,
       respawnTimer: 0,
       active: true,
       eliminated: false,
+      modules: config.modules,
+      ghostActive: false,
+      empActive: false,
     };
   }
 
@@ -220,6 +235,33 @@ export class LocalBattleEngine {
       fighter.fireTimer = Math.max(0, fighter.fireTimer - dt);
       fighter.rageTimer = Math.max(0, fighter.rageTimer - dt);
       fighter.invincibleTimer = Math.max(0, fighter.invincibleTimer - dt);
+
+      const effects = this.moduleEffects.get(fighter.id);
+      if (!effects) continue;
+
+      effects.empTimer = Math.max(0, effects.empTimer - dt);
+      effects.ghostExposeTimer = Math.max(0, effects.ghostExposeTimer - dt);
+
+      if (effects.repairWisp > 0 && fighter.active && !fighter.eliminated && fighter.hp > 0) {
+        fighter.hp = Math.min(fighter.maxHp, fighter.hp + dt * (0.16 + effects.repairWisp * 0.14));
+      }
+
+      if (effects.ghostVeil > 0 && fighter.active && !fighter.eliminated) {
+        if (effects.ghostActiveTimer > 0) {
+          effects.ghostActiveTimer = Math.max(0, effects.ghostActiveTimer - dt);
+          if (effects.ghostActiveTimer === 0) {
+            effects.ghostCooldownTimer = ghostCooldown(effects.ghostVeil);
+          }
+        } else {
+          effects.ghostCooldownTimer = Math.max(0, effects.ghostCooldownTimer - dt);
+          if (effects.ghostCooldownTimer === 0) {
+            effects.ghostActiveTimer = ghostDuration(effects.ghostVeil);
+          }
+        }
+      }
+
+      fighter.ghostActive = effects.ghostVeil > 0 && effects.ghostActiveTimer > 0 && effects.ghostExposeTimer <= 0;
+      fighter.empActive = effects.empTimer > 0;
     }
   }
 
@@ -243,7 +285,10 @@ export class LocalBattleEngine {
       if (!fighter.active || fighter.eliminated) continue;
 
       const observation = this.createObservation(fighter);
-      const action = this.sanitizeAction(fighter, this.readControllerAction(fighter, observation));
+      const action = this.applyControlEffects(
+        fighter,
+        this.sanitizeAction(fighter, this.readControllerAction(fighter, observation))
+      );
       this.moveFighter(fighter, action, dt);
 
       if (action.fireMode !== 'hold') {
@@ -307,20 +352,28 @@ export class LocalBattleEngine {
     const dy = aimY - fighter.pos.y;
     const distance = Math.hypot(dx, dy) || 1;
     const speed = this.config.projectileSpeed;
+    const effects = this.moduleEffects.get(fighter.id) ?? createModuleEffects([]);
     const damage = fighter.rageTimer > 0 ? fighter.damage + 1 : fighter.damage;
+    const shots = createModuleShotPattern(effects);
 
-    this.state.projectiles.push({
-      id: this.nextId('projectile'),
-      ownerId: fighter.id,
-      pos: { x: fighter.pos.x, y: fighter.pos.y - fighter.height * 0.4 },
-      vel: { x: (dx / distance) * speed, y: (dy / distance) * speed },
-      width: 6,
-      height: 14,
-      damage,
-      active: true,
-    });
+    for (const shot of shots) {
+      const rotated = rotateUnit(dx / distance, dy / distance, shot.angle);
+      this.state.projectiles.push({
+        id: this.nextId('projectile'),
+        ownerId: fighter.id,
+        pos: {
+          x: fighter.pos.x + shot.offsetX,
+          y: fighter.pos.y - fighter.height * 0.4,
+        },
+        vel: { x: rotated.x * speed, y: rotated.y * speed },
+        width: effects.overloadLance > 0 ? 8 : 6,
+        height: effects.overloadLance > 0 ? 24 : 14,
+        damage: damage * shot.damageScale,
+        active: true,
+      });
+    }
 
-    this.state.stats[fighter.id].shotsFired += 1;
+    this.state.stats[fighter.id].shotsFired += shots.length;
     fighter.fireTimer = action.fireMode === 'burst' ? fighter.fireCooldown * 0.6 : fighter.fireCooldown;
     if (fighter.rageTimer > 0) {
       fighter.fireTimer *= 0.6;
@@ -376,19 +429,33 @@ export class LocalBattleEngine {
   private applyProjectileHit(projectile: BattleProjectile, fighter: BattleFighterState) {
     const ownerStats = this.state.stats[projectile.ownerId];
     const targetStats = this.state.stats[fighter.id];
+    const ownerEffects = this.moduleEffects.get(projectile.ownerId);
+    const targetEffects = this.moduleEffects.get(fighter.id);
     ownerStats.shotsHit += 1;
 
     if (fighter.shield > 0) {
       fighter.shield -= 1;
       fighter.invincibleTimer = 0.25;
+      if (fighter.shield === 0 && targetEffects?.aegisLayer && targetEffects.aegisLayer >= 3) {
+        this.releaseAegisShockwave(fighter);
+      }
       return;
     }
 
-    const damage = Math.min(projectile.damage, fighter.hp);
+    const reduction = targetEffects?.phantomEcho ? targetEffects.phantomEcho * 0.08 : 0;
+    const damage = Math.min(projectile.damage * (1 - reduction), fighter.hp);
     fighter.hp -= damage;
     ownerStats.damageDealt += damage;
     ownerStats.score += damage * 10;
     targetStats.damageTaken += damage;
+
+    if (targetEffects?.ghostVeil) {
+      targetEffects.ghostExposeTimer = 1;
+    }
+
+    if (ownerEffects?.blackoutPulse && targetEffects) {
+      targetEffects.empTimer = Math.max(targetEffects.empTimer, blackoutDuration(ownerEffects.blackoutPulse));
+    }
 
     if (fighter.hp <= 0) {
       this.knockOutFighter(projectile.ownerId, fighter);
@@ -532,9 +599,9 @@ export class LocalBattleEngine {
         phase: this.state.phase,
       },
       self: createCompressedFighter(fighter, this.state.stats[fighter.id]),
-      fighters: this.state.fighters.map((candidate) =>
-        createCompressedFighter(candidate, this.state.stats[candidate.id])
-      ),
+      fighters: this.state.fighters
+        .filter((candidate) => candidate.id === fighter.id || this.isTargetableOpponent(candidate))
+        .map((candidate) => createCompressedFighter(candidate, this.state.stats[candidate.id])),
       threats: this.state.projectiles
         .filter((projectile) => projectile.ownerId !== fighter.id)
         .map((projectile) => ({
@@ -563,8 +630,42 @@ export class LocalBattleEngine {
 
   private createOpponentSnapshots(fighter: BattleFighterState): BattleFighterSnapshot[] {
     return this.state.fighters
-      .filter((opponent) => opponent.id !== fighter.id)
+      .filter((opponent) => opponent.id !== fighter.id && this.isTargetableOpponent(opponent))
       .map(createFighterSnapshot);
+  }
+
+  private applyControlEffects(fighter: BattleFighterState, action: BotAction): BotAction {
+    const effects = this.moduleEffects.get(fighter.id);
+    if (!effects || effects.empTimer <= 0) return action;
+
+    const phase = this.state.tick * 0.37 + fighter.id.length;
+    return {
+      ...action,
+      targetX: clamp(fighter.pos.x + Math.cos(phase) * 140, fighter.width / 2, this.state.arena.width - fighter.width / 2),
+      targetY: clamp(fighter.pos.y + Math.sin(phase * 0.7) * 110, fighter.height / 2, this.state.arena.height - fighter.height / 2),
+      fireMode: effects.empTimer > 1.2 ? 'hold' : action.fireMode,
+    };
+  }
+
+  private isTargetableOpponent(fighter: BattleFighterState): boolean {
+    const effects = this.moduleEffects.get(fighter.id);
+    if (!effects?.ghostVeil) return true;
+    return effects.ghostActiveTimer <= 0 || effects.ghostExposeTimer > 0;
+  }
+
+  private releaseAegisShockwave(origin: BattleFighterState): void {
+    for (const fighter of this.state.fighters) {
+      if (fighter.id === origin.id || !fighter.active || fighter.eliminated) continue;
+      if (distance(origin.pos, fighter.pos) > 92) continue;
+
+      const damage = Math.min(1.4, fighter.hp);
+      fighter.hp -= damage;
+      this.state.stats[origin.id].damageDealt += damage;
+      this.state.stats[fighter.id].damageTaken += damage;
+      if (fighter.hp <= 0) {
+        this.knockOutFighter(origin.id, fighter);
+      }
+    }
   }
 
   private respawnPosition(fighter: BattleFighterState) {
@@ -593,8 +694,91 @@ export class LocalBattleEngine {
   }
 }
 
+interface FighterModuleEffects {
+  wingSwarm: number;
+  missileStorm: number;
+  overloadLance: number;
+  phantomEcho: number;
+  ghostVeil: number;
+  blackoutPulse: number;
+  aegisLayer: number;
+  vectorDrive: number;
+  repairWisp: number;
+  empTimer: number;
+  ghostActiveTimer: number;
+  ghostCooldownTimer: number;
+  ghostExposeTimer: number;
+}
+
+interface ModuleShot {
+  angle: number;
+  offsetX: number;
+  damageScale: number;
+}
+
 const DEFAULT_FIGHTER_COLORS = ['#00F0FF', '#FF4D8D', '#FFCC00', '#7CFF6B', '#B28DFF'];
 const COLLECTIBLE_KINDS: readonly BattleCollectibleKind[] = ['repair', 'shield', 'rage', 'score'];
+
+function createModuleEffects(modules: readonly string[]): FighterModuleEffects {
+  const ghostVeil = moduleLevel(modules, 'Ghost Veil');
+  return {
+    wingSwarm: moduleLevel(modules, 'Wing Swarm'),
+    missileStorm: moduleLevel(modules, 'Missile Storm'),
+    overloadLance: moduleLevel(modules, 'Overload Lance'),
+    phantomEcho: moduleLevel(modules, 'Phantom Echo'),
+    ghostVeil,
+    blackoutPulse: moduleLevel(modules, 'Blackout Pulse'),
+    aegisLayer: moduleLevel(modules, 'Aegis Layer'),
+    vectorDrive: moduleLevel(modules, 'Vector Drive'),
+    repairWisp: Math.max(moduleLevel(modules, 'Repair Wisp'), moduleLevel(modules, 'Repair Nanites')),
+    empTimer: 0,
+    ghostActiveTimer: ghostVeil > 0 ? ghostDuration(ghostVeil) : 0,
+    ghostCooldownTimer: 0,
+    ghostExposeTimer: 0,
+  };
+}
+
+function moduleLevel(modules: readonly string[], name: string): number {
+  const normalizedName = name.toLowerCase();
+  for (const entry of modules) {
+    const normalizedEntry = entry.toLowerCase();
+    if (!normalizedEntry.includes(normalizedName)) continue;
+    const match = /lv\s*([1-3])/i.exec(entry);
+    return match ? Number(match[1]) : 1;
+  }
+  return 0;
+}
+
+function ghostDuration(level: number): number {
+  return level <= 1 ? 8 : 12;
+}
+
+function ghostCooldown(level: number): number {
+  return level >= 3 ? 20 : level === 2 ? 24 : 30;
+}
+
+function blackoutDuration(level: number): number {
+  return level <= 1 ? 1.5 : level === 2 ? 3 : 4;
+}
+
+function createModuleShotPattern(effects: FighterModuleEffects): ModuleShot[] {
+  const shots: ModuleShot[] = [{ angle: 0, offsetX: 0, damageScale: effects.overloadLance > 0 ? 1 + effects.overloadLance * 0.38 : 1 }];
+
+  for (let index = 0; index < effects.wingSwarm; index += 1) {
+    const offset = 10 + index * 6;
+    shots.push({ angle: -0.035 * (index + 1), offsetX: -offset, damageScale: 0.45 });
+    shots.push({ angle: 0.035 * (index + 1), offsetX: offset, damageScale: 0.45 });
+  }
+
+  const missilePairs = effects.missileStorm === 1 ? 1 : effects.missileStorm === 2 ? 2 : effects.missileStorm >= 3 ? 4 : 0;
+  for (let index = 0; index < missilePairs; index += 1) {
+    const angle = 0.12 + index * 0.08;
+    shots.push({ angle: -angle, offsetX: -4, damageScale: effects.missileStorm >= 3 ? 0.8 : 0.62 });
+    shots.push({ angle, offsetX: 4, damageScale: effects.missileStorm >= 3 ? 0.8 : 0.62 });
+  }
+
+  return shots;
+}
 
 function createInitialStats(fighter: BattleFighterState) {
   return {
@@ -618,6 +802,7 @@ function createFighterSnapshot(fighter: BattleFighterState): BattleFighterSnapsh
     id: fighter.id,
     name: fighter.name,
     botName: fighter.botName,
+    color: fighter.color,
     pos: { ...fighter.pos },
     vel: { ...fighter.vel },
     hp: fighter.hp,
@@ -627,6 +812,9 @@ function createFighterSnapshot(fighter: BattleFighterState): BattleFighterSnapsh
     rageTimer: fighter.rageTimer,
     active: fighter.active,
     eliminated: fighter.eliminated,
+    modules: fighter.modules,
+    ghostActive: fighter.ghostActive,
+    empActive: fighter.empActive,
   };
 }
 
@@ -637,6 +825,8 @@ function createProjectileSnapshot(projectile: BattleProjectile): BattleProjectil
     pos: { ...projectile.pos },
     vel: { ...projectile.vel },
     damage: projectile.damage,
+    width: projectile.width,
+    height: projectile.height,
   };
 }
 
@@ -764,6 +954,15 @@ function rectCollision(
 
 function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function rotateUnit(x: number, y: number, radians: number): { x: number; y: number } {
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: x * cos - y * sin,
+    y: x * sin + y * cos,
+  };
 }
 
 function finiteOr(value: number | undefined, fallback: number): number {

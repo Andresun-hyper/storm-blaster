@@ -1,0 +1,96 @@
+[
+  {
+    "playerId": "system-ares-99",
+    "displayName": "ARES-99",
+    "score": 1800,
+    "modules": [
+      "Wing Swarm-Lv3",
+      "Missile Storm-Lv3",
+      "Overload Lance-Lv3"
+    ],
+    "botKind": "aggressive",
+    "combatPower": 14150,
+    "isSystem": true
+  },
+  {
+    "playerId": "system-aegis-max",
+    "displayName": "AEGIS-MAX",
+    "score": 1650,
+    "modules": [
+      "Aegis Layer-Lv3",
+      "Repair Nanites-Lv3",
+      "Vector Drive-Lv3"
+    ],
+    "botKind": "defensive",
+    "combatPower": 13700,
+    "isSystem": true
+  },
+  {
+    "playerId": "system-ghost-x",
+    "displayName": "GHOST-X",
+    "score": 1500,
+    "modules": [
+      "Ghost Veil-Lv3",
+      "Phantom Echo-Lv3",
+      "Vector Drive-Lv3"
+    ],
+    "botKind": "llm-strategy",
+    "policy": {
+      "targetPriority": "lowest-hp",
+      "formation": "edge-kite",
+      "dodgeStyle": "wide",
+      "aggression": 0.1,
+      "retreatBias": 0.8,
+      "dodgeBias": 0.9
+    },
+    "combatPower": 13250,
+    "isSystem": true
+  },
+  {
+    "playerId": "system-lyra-31",
+    "displayName": "LYRA-31",
+    "score": 1350,
+    "modules": [
+      "Wing Swarm-Lv2",
+      "Aegis Layer-Lv2",
+      "Repair Nanites-Lv2"
+    ],
+    "botKind": "collector",
+    "combatPower": 10550,
+    "isSystem": true
+  },
+  {
+    "playerId": "system-nova-13",
+    "displayName": "NOVA-13",
+    "score": 1200,
+    "modules": [
+      "Missile Storm-Lv2",
+      "Overload Lance-Lv2",
+      "Vector Drive-Lv2"
+    ],
+    "botKind": "aggressive",
+    "combatPower": 10100,
+    "isSystem": true
+  },
+  {
+    "playerId": "system-echo-07",
+    "displayName": "ECHO-07",
+    "score": 1100,
+    "modules": [
+      "Ghost Veil-Lv2",
+      "Phantom Echo-Lv2",
+      "Aegis Layer-Lv1"
+    ],
+    "botKind": "llm-strategy",
+    "policy": {
+      "targetPriority": "nearest",
+      "formation": "center-lane",
+      "dodgeStyle": "wide",
+      "aggression": 0.5,
+      "retreatBias": 0.5,
+      "dodgeBias": 0.5
+    },
+    "combatPower": 9050,
+    "isSystem": true
+  }
+]

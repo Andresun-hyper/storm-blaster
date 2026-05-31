@@ -41,6 +41,7 @@ export interface MatchParticipant {
   displayName: string;
   bot?: BotSelection;
   connected: boolean;
+  agentConnected?: boolean;
 }
 
 export interface MatchStateSnapshot<TState = unknown> {
@@ -103,6 +104,53 @@ export interface ReadyRoomRequest {
   ready: boolean;
 }
 
+export interface AgentConnectRequest {
+  key: string;
+}
+
+export interface AgentStrategyRequest {
+  key: string;
+  strategyUrl: string;
+}
+
+export interface LadderEntry {
+  playerId: string;
+  displayName: string;
+  score: number;
+  combatPower: number;
+  modules: string[];
+  botKind: string;
+  policy?: BotPolicy;
+  isSystem?: boolean;
+}
+
+export interface GetLadderRequest {
+  playerId: string;
+}
+
+export interface UploadDefenseRequest {
+  playerId: string;
+  displayName: string;
+  modules: string[];
+  botKind: string;
+  policy?: BotPolicy;
+}
+
+export interface ChallengeResultRequest {
+  challengerId: string;
+  opponentId: string;
+  outcome: 'win' | 'lose';
+}
+
+export interface LadderSyncResponse {
+  leaderboard: LadderEntry[];
+  personalRank: number;
+  personalScore: number;
+  personalCombatPower: number;
+  challengerChange?: number;
+  opponentChange?: number;
+}
+
 export interface CreateRoomResponse {
   room: RoomInfo;
 }
@@ -147,7 +195,12 @@ export type ClientMessage =
   | BaseEnvelope<'room.join', JoinRoomRequest>
   | BaseEnvelope<'match.bot.select', SelectBotRequest>
   | BaseEnvelope<'room.ready', ReadyRoomRequest>
-  | BaseEnvelope<'match.start', StartMatchRequest>;
+  | BaseEnvelope<'match.start', StartMatchRequest>
+  | BaseEnvelope<'agent.connect', AgentConnectRequest>
+  | BaseEnvelope<'agent.strategy', AgentStrategyRequest>
+  | BaseEnvelope<'ladder.get', GetLadderRequest>
+  | BaseEnvelope<'ladder.upload_defense', UploadDefenseRequest>
+  | BaseEnvelope<'ladder.battle_result', ChallengeResultRequest>;
 
 export type ServerMessage<TState = unknown, TSummary = unknown> =
   | BaseEnvelope<'room.created', CreateRoomResponse>
@@ -158,4 +211,5 @@ export type ServerMessage<TState = unknown, TSummary = unknown> =
   | BaseEnvelope<'match.started', StartMatchResponse>
   | BaseEnvelope<'match.state', StateSnapshotEvent<TState>>
   | BaseEnvelope<'match.report', MatchReportEvent<TSummary>>
+  | BaseEnvelope<'ladder.sync', LadderSyncResponse>
   | BaseEnvelope<'error', ErrorEvent>;

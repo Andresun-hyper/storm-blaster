@@ -9,6 +9,7 @@ export class WebSocketConnection extends EventEmitter {
   readonly id = randomUUID();
   roomId?: string;
   playerId?: string;
+  isAgent?: boolean;
 
   private readonly socket: Socket;
   private buffer = Buffer.alloc(0);

@@ -72,6 +72,7 @@ export interface BattleFighterConfig {
   id: BattleId;
   name: string;
   bot?: BattleBotController;
+  modules?: readonly string[];
   color?: string;
   pos?: Vec2;
   maxHp?: number;
@@ -104,6 +105,9 @@ export interface BattleFighterState {
   respawnTimer: number;
   active: boolean;
   eliminated: boolean;
+  modules?: readonly string[];
+  ghostActive?: boolean;
+  empActive?: boolean;
 }
 
 export interface BattleProjectile {
@@ -160,6 +164,7 @@ export interface BattleFighterSnapshot {
   id: BattleId;
   name: string;
   botName: string;
+  color: string;
   pos: Vec2;
   vel: Vec2;
   hp: number;
@@ -169,6 +174,9 @@ export interface BattleFighterSnapshot {
   rageTimer: number;
   active: boolean;
   eliminated: boolean;
+  modules?: readonly string[];
+  ghostActive?: boolean;
+  empActive?: boolean;
 }
 
 export interface BattleProjectileSnapshot {
@@ -177,6 +185,8 @@ export interface BattleProjectileSnapshot {
   pos: Vec2;
   vel: Vec2;
   damage: number;
+  width?: number;
+  height?: number;
 }
 
 export interface BattleCollectibleSnapshot {
